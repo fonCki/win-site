@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+deployment.zip
+
+# Environment variables (keep secrets out of repo)
+.env
+.env.local
+.env.*.local
