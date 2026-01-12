@@ -5,6 +5,8 @@ import HomePage from './HomePage';
 // Real Windows 98 IE toolbar icons
 const ICONS = {
   ie: 'https://win98icons.alexmeub.com/icons/png/msie1-2.png',
+  ieThrobberLoading: '/icons/ie-throbber-tenor.gif',   // Animated globe when loading
+  ieThrobberIdle: '/icons/ie-throbber-static.png',    // First frame of animation (static)
   page: 'https://win98icons.alexmeub.com/icons/png/html-3.png',
   search: 'https://win98icons.alexmeub.com/icons/png/search_web-0.png',
   history: 'https://win98icons.alexmeub.com/icons/png/history-0.png',
@@ -102,8 +104,11 @@ const BrowserContent = () => {
         </ToolbarSection>
 
         <ThrobberContainer>
-          <Throbber $spinning={isLoading}>
-            <ThrobberIcon src={ICONS.ie} alt="IE" />
+          <Throbber>
+            <ThrobberIcon
+              src={isLoading ? ICONS.ieThrobberLoading : ICONS.ieThrobberIdle}
+              alt="IE"
+            />
           </Throbber>
         </ThrobberContainer>
       </Toolbar>
@@ -209,11 +214,6 @@ const HomeIconSVG = () => (
 );
 
 // Animations
-const spin = keyframes`
-  0% { transform: rotateY(0deg); }
-  100% { transform: rotateY(360deg); }
-`;
-
 const loadingProgress = keyframes`
   0% { width: 0%; }
   100% { width: 100%; }
@@ -326,23 +326,22 @@ const ThrobberContainer = styled.div`
   padding: 2px;
 `;
 
-const Throbber = styled.div<{ $spinning: boolean }>`
+const Throbber = styled.div`
   width: 42px;
   height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #87ceeb 0%, #4169e1 50%, #000080 100%);
   border: 2px solid;
   border-color: #fff #808080 #808080 #fff;
-  animation: ${props => props.$spinning ? spin : 'none'} 1.5s linear infinite;
-  transform-style: preserve-3d;
+  overflow: hidden;
+  background: #fff;
 `;
 
 const ThrobberIcon = styled.img`
-  width: 32px;
-  height: 32px;
-  image-rendering: pixelated;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 `;
 
 const AddressBarContainer = styled.div`
