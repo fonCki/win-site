@@ -117,13 +117,12 @@ src/
 
 - **Terminal Site:** [alfonso.ridao.ar](https://alfonso.ridao.ar) - My CLI-style portfolio
 
-## Author
 
-**Alfonso Pedro Ridao**
-- Website: [alfonso.ridao.ar](https://alfonso.ridao.ar)
-- GitHub: [@fonCki](https://github.com/fonCki)
-- LinkedIn: [alfonsoridao](https://linkedin.com/in/alfonsoridao)
+## Authors
 
-## License
+- [Alfonso Ridao](https://alfonso.ridao.ar)
+- For support, email alfonso@ridao.ar.
 
-MIT
+
+## 🚀 About Me
+I'm a time traveler
