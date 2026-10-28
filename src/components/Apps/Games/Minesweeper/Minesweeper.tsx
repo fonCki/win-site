@@ -58,6 +58,22 @@ const calculateAdjacent = (board: CellState[][]): void => {
   }
 };
 
+function revealCell(row: number, col: number, currentBoard: CellState[][]) {
+  if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return;
+  const cell = currentBoard[row][col];
+  if (cell.isRevealed || cell.isFlagged) return;
+
+  cell.isRevealed = true;
+
+  if (cell.adjacentMines === 0 && !cell.isMine) {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        revealCell(row + dr, col + dc, currentBoard);
+      }
+    }
+  }
+}
+
 const Minesweeper = () => {
   const [board, setBoard] = useState<CellState[][]>(createEmptyBoard);
   const [gameState, setGameState] = useState<GameState>('playing');
@@ -83,21 +99,7 @@ const Minesweeper = () => {
     setIsFirstClick(true);
   }, []);
 
-  const revealCell = useCallback((row: number, col: number, currentBoard: CellState[][]) => {
-    if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return;
-    const cell = currentBoard[row][col];
-    if (cell.isRevealed || cell.isFlagged) return;
 
-    cell.isRevealed = true;
-
-    if (cell.adjacentMines === 0 && !cell.isMine) {
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          revealCell(row + dr, col + dc, currentBoard);
-        }
-      }
-    }
-  }, []);
 
   const checkWin = useCallback((currentBoard: CellState[][]): boolean => {
     for (let row = 0; row < ROWS; row++) {
@@ -143,7 +145,7 @@ const Minesweeper = () => {
     if (checkWin(newBoard)) {
       setGameState('won');
     }
-  }, [board, gameState, isFirstClick, revealCell, checkWin]);
+  }, [board, gameState, isFirstClick, checkWin]);
 
   const handleRightClick = useCallback((e: React.MouseEvent, row: number, col: number) => {
     e.preventDefault();
@@ -196,6 +198,7 @@ const Minesweeper = () => {
       <Header>
         <Counter>{formatNumber(minesLeft)}</Counter>
         <SmileyButton
+          aria-label="New game"
           onClick={resetGame}
           onMouseDown={() => setIsMouseDown(true)}
           onMouseUp={() => setIsMouseDown(false)}
@@ -215,6 +218,10 @@ const Minesweeper = () => {
             {row.map((cell, colIndex) => (
               <Cell
                 key={colIndex}
+                role="button"
+                tabIndex={0}
+                aria-label={`Row ${rowIndex + 1}, column ${colIndex + 1}${cell.isFlagged ? ', flagged' : cell.isRevealed ? ', revealed' : ''}`}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCellClick(rowIndex, colIndex); } }}
                 $revealed={cell.isRevealed}
                 $mine={cell.isMine && cell.isRevealed}
                 onClick={() => handleCellClick(rowIndex, colIndex)}
@@ -290,6 +297,7 @@ const Row = styled.div`
 
 const Cell = styled.div<{ $revealed: boolean; $mine: boolean }>`
   width: 24px;
+  flex-shrink: 0;
   height: 24px;
   display: flex;
   align-items: center;

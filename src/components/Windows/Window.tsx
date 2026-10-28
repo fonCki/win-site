@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
+import { fitWindow, resizeWindow, TASKBAR_HEIGHT } from './geometry';
 
 export interface WindowProps {
   id: string;
@@ -40,112 +41,63 @@ const Window = ({
   resizable = true,
   noPadding = false,
 }: WindowProps) => {
-  // Constrain initial position to viewport
-  const constrainToViewport = (pos: { x: number; y: number }, windowSize: { width: number; height: number }) => {
-    const maxX = Math.max(0, window.innerWidth - windowSize.width);
-    const maxY = Math.max(0, window.innerHeight - 30 - windowSize.height); // 30px for taskbar
-    return {
-      x: Math.max(0, Math.min(pos.x, maxX)),
-      y: Math.max(0, Math.min(pos.y, maxY)),
-    };
-  };
-
-  const [position, setPosition] = useState(() => constrainToViewport(initialPosition, initialSize));
-  const [size, setSize] = useState(initialSize);
+  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+  const [bounds, setBounds] = useState(() => fitWindow({ ...initialPosition, ...initialSize }, viewport()));
+  const position = { x: bounds.x, y: bounds.y };
+  const size = { width: bounds.width, height: bounds.height };
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
+  const [resizeStart, setResizeStart] = useState({ pointerX: 0, pointerY: 0, ...bounds });
   const windowRef = useRef<HTMLDivElement>(null);
-  const prevPosition = useRef(position);
-  const prevSize = useRef(size);
+  const restoreBounds = useRef(bounds);
 
   // Keep window within viewport on resize
   useEffect(() => {
     const handleWindowResize = () => {
-      if (isMaximized) {
-        setSize({ width: window.innerWidth, height: window.innerHeight - 30 });
-      } else {
-        setPosition(prev => constrainToViewport(prev, size));
-      }
+      setBounds(prev => isMaximized
+        ? { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight - TASKBAR_HEIGHT }
+        : fitWindow(prev, viewport()));
     };
 
     window.addEventListener('resize', handleWindowResize);
     return () => window.removeEventListener('resize', handleWindowResize);
-  }, [isMaximized, size]);
+  }, [isMaximized]);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       if (isDragging && !isMaximized) {
-        const newX = e.clientX - dragOffset.x;
-        const newY = e.clientY - dragOffset.y;
-        // Constrain to viewport (allow partial off-screen but keep title bar visible)
-        const maxX = window.innerWidth - 100; // Keep at least 100px visible
-        const maxY = window.innerHeight - 50; // Keep above taskbar
-        setPosition({
-          x: Math.max(-size.width + 100, Math.min(newX, maxX)),
-          y: Math.max(0, Math.min(newY, maxY)),
-        });
+        setBounds(prev => fitWindow({ ...prev, x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y }, viewport()));
       }
       if (isResizing && !isMaximized) {
-        const dx = e.clientX - resizeStart.x;
-        const dy = e.clientY - resizeStart.y;
-        const minWidth = 200;
-        const minHeight = 150;
-
-        let newWidth = resizeStart.width;
-        let newHeight = resizeStart.height;
-        let newX = resizeStart.posX;
-        let newY = resizeStart.posY;
-
-        if (resizeDirection.includes('e')) {
-          newWidth = Math.max(minWidth, resizeStart.width + dx);
-        }
-        if (resizeDirection.includes('w')) {
-          const proposedWidth = resizeStart.width - dx;
-          if (proposedWidth >= minWidth) {
-            newWidth = proposedWidth;
-            newX = resizeStart.posX + dx;
-          }
-        }
-        if (resizeDirection.includes('s')) {
-          newHeight = Math.max(minHeight, resizeStart.height + dy);
-        }
-        if (resizeDirection.includes('n')) {
-          const proposedHeight = resizeStart.height - dy;
-          if (proposedHeight >= minHeight) {
-            newHeight = proposedHeight;
-            newY = resizeStart.posY + dy;
-          }
-        }
-
-        setSize({ width: newWidth, height: newHeight });
-        setPosition({ x: newX, y: Math.max(0, newY) });
+        setBounds(resizeWindow(resizeStart, resizeDirection, e.clientX - resizeStart.pointerX, e.clientY - resizeStart.pointerY, viewport()));
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsDragging(false);
       setIsResizing(false);
       setResizeDirection('');
     };
 
     if (isDragging || isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('pointermove', handlePointerMove);
+      document.addEventListener('pointerup', handlePointerUp);
+      document.addEventListener('pointercancel', handlePointerUp);
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [isDragging, isResizing, dragOffset, resizeStart, resizeDirection, isMaximized, size]);
+  }, [isDragging, isResizing, dragOffset, resizeStart, resizeDirection, isMaximized]);
 
-  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+  const handleHeaderPointerDown = (e: React.PointerEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button')) return;
+    if (e.button !== 0 || target.closest('button')) return;
     onFocus(id);
     setIsDragging(true);
     const rect = windowRef.current?.getBoundingClientRect();
@@ -159,54 +111,51 @@ const Window = ({
 
   const handleMaximize = () => {
     if (isMaximized) {
-      setPosition(prevPosition.current);
-      setSize(prevSize.current);
+      setBounds(fitWindow(restoreBounds.current, viewport()));
     } else {
-      prevPosition.current = position;
-      prevSize.current = size;
-      setPosition({ x: 0, y: 0 });
-      setSize({ width: window.innerWidth, height: window.innerHeight - 30 });
+      restoreBounds.current = bounds;
+      setBounds({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight - TASKBAR_HEIGHT });
     }
     setIsMaximized(!isMaximized);
   };
 
-  const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
+  const handleResizeStart = (direction: string) => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     onFocus(id);
     setIsResizing(true);
     setResizeDirection(direction);
     setResizeStart({
-      x: e.clientX,
-      y: e.clientY,
-      width: size.width,
-      height: size.height,
-      posX: position.x,
-      posY: position.y,
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      ...bounds,
     });
   };
-
-  if (isMinimized) return null;
 
   return (
     <WindowContainer
       ref={windowRef}
+      role="dialog"
+      aria-label={title}
+      data-window-id={id}
+      aria-hidden={isMinimized}
       style={{
         left: position.x,
         top: position.y,
         width: size.width,
         height: size.height,
         zIndex,
+        display: isMinimized ? 'none' : 'flex',
       }}
-      onClick={() => onFocus(id)}
+      onPointerDown={() => onFocus(id)}
     >
       {/* Title Bar */}
-      <TitleBar $isActive={isActive} onMouseDown={handleHeaderMouseDown}>
+      <TitleBar $isActive={isActive} onPointerDown={handleHeaderPointerDown} onDoubleClick={handleMaximize}>
         <TitleBarLeft>
           {icon && <TitleBarIcon src={icon} alt="" />}
           <TitleBarText>{title}</TitleBarText>
         </TitleBarLeft>
-        <TitleBarButtons>
+        <TitleBarButtons onDoubleClick={e => e.stopPropagation()}>
           <TitleButton onClick={() => onMinimize(id)} title="Minimize">
             <MinimizeSvg />
           </TitleButton>
@@ -242,14 +191,14 @@ const Window = ({
       {/* Resize Handles */}
       {resizable && !isMaximized && (
         <>
-          <ResizeHandle $direction="n" onMouseDown={handleResizeStart('n')} />
-          <ResizeHandle $direction="s" onMouseDown={handleResizeStart('s')} />
-          <ResizeHandle $direction="e" onMouseDown={handleResizeStart('e')} />
-          <ResizeHandle $direction="w" onMouseDown={handleResizeStart('w')} />
-          <ResizeHandle $direction="ne" onMouseDown={handleResizeStart('ne')} />
-          <ResizeHandle $direction="nw" onMouseDown={handleResizeStart('nw')} />
-          <ResizeHandle $direction="se" onMouseDown={handleResizeStart('se')} />
-          <ResizeHandle $direction="sw" onMouseDown={handleResizeStart('sw')} />
+          <ResizeHandle $direction="n" onPointerDown={handleResizeStart('n')} />
+          <ResizeHandle $direction="s" onPointerDown={handleResizeStart('s')} />
+          <ResizeHandle $direction="e" onPointerDown={handleResizeStart('e')} />
+          <ResizeHandle $direction="w" onPointerDown={handleResizeStart('w')} />
+          <ResizeHandle $direction="ne" onPointerDown={handleResizeStart('ne')} />
+          <ResizeHandle $direction="nw" onPointerDown={handleResizeStart('nw')} />
+          <ResizeHandle $direction="se" onPointerDown={handleResizeStart('se')} />
+          <ResizeHandle $direction="sw" onPointerDown={handleResizeStart('sw')} />
         </>
       )}
     </WindowContainer>
@@ -295,6 +244,8 @@ const TitleBar = styled.div<{ $isActive: boolean }>`
   justify-content: space-between;
   align-items: center;
   height: 18px;
+  flex-shrink: 0;
+  touch-action: none;
   padding: 2px 2px 2px 3px;
   background: ${props => props.$isActive
     ? 'linear-gradient(90deg, #000080, #1084d0)'
@@ -382,6 +333,8 @@ const MenuItem = styled.span`
 
 const WindowContent = styled.div<{ $noPadding?: boolean }>`
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   background-color: ${props => props.$noPadding ? '#c0c0c0' : '#fff'};
   border: ${props => props.$noPadding ? 'none' : '2px solid'};
   border-top-color: #808080;
@@ -395,6 +348,7 @@ const WindowContent = styled.div<{ $noPadding?: boolean }>`
 
 const StatusBar = styled.div`
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   height: 18px;
   padding: 2px 4px;
@@ -452,6 +406,7 @@ const ResizeHandle = styled.div<{ $direction: string }>`
   ${props => getPosition(props.$direction)}
   cursor: ${props => getCursor(props.$direction)};
   z-index: 10;
+  touch-action: none;
 `;
 
 export default Window;

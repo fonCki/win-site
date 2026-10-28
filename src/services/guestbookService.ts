@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+import { apiFetch } from './api';
 
 export interface GuestbookEntry {
   id: string;
@@ -24,11 +24,8 @@ export interface SubmitResponse {
 
 // Get all guestbook entries and current visitor count
 export async function getGuestbookEntries(): Promise<GuestbookResponse> {
-  const response = await fetch(`${API_BASE}/api/guestbook`, {
+  const response = await apiFetch('/api/guestbook', {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
   });
 
   if (!response.ok) {
@@ -39,20 +36,16 @@ export async function getGuestbookEntries(): Promise<GuestbookResponse> {
 }
 
 // Record a visit and get updated visitor count
-export async function recordVisit(): Promise<VisitResponse> {
-  const response = await fetch(`${API_BASE}/api/guestbook`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ action: 'visit' }),
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to record visit');
+let visitRequest: Promise<VisitResponse> | undefined;
+export function recordVisit(): Promise<VisitResponse> {
+  if (!visitRequest) {
+    visitRequest = apiFetch('/api/guestbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'visit' }),
+    }).then(response => response.json()).catch(error => { visitRequest = undefined; throw error; });
   }
-
-  return response.json();
+  return visitRequest;
 }
 
 // Submit a new guestbook entry
@@ -60,7 +53,7 @@ export async function submitGuestbookEntry(
   name: string,
   message: string
 ): Promise<SubmitResponse> {
-  const response = await fetch(`${API_BASE}/api/guestbook`, {
+  const response = await apiFetch('/api/guestbook', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

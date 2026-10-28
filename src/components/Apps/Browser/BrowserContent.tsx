@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import HomePage from './HomePage';
 
@@ -18,6 +18,8 @@ const BrowserContent = () => {
   const HOME_URL = 'http://fonchi.ridao.ar/';
   const [isLoading, setIsLoading] = useState(true);
   const [statusText, setStatusText] = useState('Opening page...');
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); }, []);
 
   // Initial load animation
   useEffect(() => {
@@ -32,7 +34,8 @@ const BrowserContent = () => {
   const handleRefresh = () => {
     setIsLoading(true);
     setStatusText('Refreshing...');
-    setTimeout(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
       setIsLoading(false);
       setStatusText('Done');
     }, 1000);
@@ -253,6 +256,7 @@ const MenuBarItem = styled.span`
 
 const Toolbar = styled.div`
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: flex-start;
   padding: 2px 4px;
@@ -362,6 +366,7 @@ const AddressLabel = styled.span`
 
 const AddressInputWrapper = styled.div`
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   background-color: #fff;
@@ -379,6 +384,10 @@ const PageIconImg = styled.img`
 
 const AddressDisplay = styled.span`
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-family: 'MS Sans Serif', Tahoma, sans-serif;
   font-size: 11px;
   padding: 0 4px;
@@ -400,6 +409,8 @@ const DropdownButton = styled.button`
 
 const BrowserFrame = styled.div`
   flex: 1;
+  min-height: 0;
+  container-type: inline-size;
   overflow: auto;
   background-color: #fff;
   border: 2px solid;
@@ -441,7 +452,7 @@ const LoadingText = styled.div`
 `;
 
 const LoadingBarContainer = styled.div`
-  width: 300px;
+  width: min(300px, 90%);
   height: 20px;
   border: 2px solid;
   border-color: #808080 #dfdfdf #dfdfdf #808080;

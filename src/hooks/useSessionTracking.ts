@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { logVisit, logSessionEnd, getIP } from '../services/analyticsService';
+import { logVisit, logSessionEnd } from '../services/analyticsService';
 
 /**
  * Hook to track user session duration and log visit/session events
@@ -7,15 +7,14 @@ import { logVisit, logSessionEnd, getIP } from '../services/analyticsService';
  * - Logs session end event on page unload with duration
  */
 export const useSessionTracking = () => {
-  const sessionStartRef = useRef<number>(Date.now());
+  const sessionStartRef = useRef<number>(0);
   const hasLoggedVisitRef = useRef(false);
 
   useEffect(() => {
+    if (!sessionStartRef.current) sessionStartRef.current = Date.now();
     // Log visit on first mount (only once)
     if (!hasLoggedVisitRef.current) {
       hasLoggedVisitRef.current = true;
-      // Pre-fetch IP to ensure it's cached for session end
-      getIP();
       logVisit();
     }
 

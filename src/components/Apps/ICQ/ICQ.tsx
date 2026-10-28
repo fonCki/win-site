@@ -15,7 +15,6 @@ const ICQ = ({ messages, setMessages, unreadCount }: ICQProps) => {
   const [isTyping, setIsTyping] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const hasInitialized = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -27,15 +26,15 @@ const ICQ = ({ messages, setMessages, unreadCount }: ICQProps) => {
 
   // Send initial welcome message from Alfonso (only once)
   useEffect(() => {
-    if (hasInitialized.current || messages.length > 0) return;
-    hasInitialized.current = true;
+    if (messages.length > 0) return;
 
     const welcomeMessage = "Hey! Welcome to my Windows 95 site! I'm Alfonso's digital twin. Feel free to ask me anything about Alfonso, his projects, or just chat! 🌸";
 
     // Simulate Alfonso sending the first message
-    setTimeout(() => {
-      setMessages([{ role: 'assistant', content: welcomeMessage }]);
+    const timer = setTimeout(() => {
+      setMessages(prev => prev.length ? prev : [{ role: 'assistant', content: welcomeMessage }]);
     }, 1000);
+    return () => clearTimeout(timer);
   }, [messages.length, setMessages]);
 
   const handleSendMessage = async () => {
@@ -55,12 +54,12 @@ const ICQ = ({ messages, setMessages, unreadCount }: ICQProps) => {
       const historyForApi = firstUserIdx >= 0 ? messages.slice(firstUserIdx) : [];
 
       const response = await sendChatMessage(userMessage, historyForApi);
-      setMessages([...newMessages, { role: 'assistant', content: response }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
       // Log chat interaction for analytics
       logChat(userMessage, response);
-    } catch (error) {
+    } catch {
       const errorResponse = "Oops! Connection lost. Try again in a moment! 📡";
-      setMessages([...newMessages, {
+      setMessages(prev => [...prev, {
         role: 'assistant',
         content: errorResponse
       }]);
@@ -96,7 +95,7 @@ const ICQ = ({ messages, setMessages, unreadCount }: ICQProps) => {
             <GroupName>Online</GroupName>
           </GroupHeader>
 
-          <ContactItem onClick={handleContactClick} $online>
+          <ContactItem role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleContactClick(); } }} onClick={handleContactClick} $online>
             <ContactFlower $online>🌸</ContactFlower>
             <ContactInfo>
               <ContactName>Alfonso</ContactName>
@@ -118,7 +117,7 @@ const ICQ = ({ messages, setMessages, unreadCount }: ICQProps) => {
   return (
     <ICQContainer>
       <ChatHeader>
-        <BackButton onClick={() => setShowChat(false)}>←</BackButton>
+        <BackButton aria-label="Back to contacts" onClick={() => setShowChat(false)}>←</BackButton>
         <ChatHeaderInfo>
           <ContactFlower $online style={{ fontSize: '16px' }}>🌸</ContactFlower>
           <ChatHeaderText>
@@ -150,7 +149,9 @@ const ICQ = ({ messages, setMessages, unreadCount }: ICQProps) => {
         <MessageInput
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyPress}
+          maxLength={1000}
+          aria-label="Message Alfonso"
           placeholder="Type a message..."
           disabled={isTyping}
         />
@@ -347,6 +348,7 @@ const ChatHeaderStatus = styled.div`
 
 const MessagesArea = styled.div`
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   background: #fff;
@@ -403,6 +405,7 @@ const TypingText = styled.span`
 
 const InputArea = styled.div`
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   padding: 8px;
   background: #d4d4d4;
@@ -411,6 +414,7 @@ const InputArea = styled.div`
 
 const MessageInput = styled.input`
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   font-size: 12px;
   border: 2px inset #808080;

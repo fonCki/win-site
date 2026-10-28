@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import styled from 'styled-components';
 import Taskbar from './Taskbar';
 import StartMenu from './StartMenu';
@@ -7,10 +7,11 @@ import Window from '../Windows/Window';
 import MyComputerContent from '../Apps/MyComputer/MyComputerContent';
 import BrowserContent from '../Apps/Browser/BrowserContent';
 import Minesweeper from '../Apps/Games/Minesweeper/Minesweeper';
-import CVViewer from '../Apps/CVViewer/CVViewer';
 import ICQ from '../Apps/ICQ/ICQ';
 import type { ChatMessage } from '../../services/chatService';
-import { logClick, logWindowAction, logChat } from '../../services/analyticsService';
+import { logClick, logWindowAction } from '../../services/analyticsService';
+
+const CVViewer = lazy(() => import('../Apps/CVViewer/CVViewer'));
 
 export interface WindowInfo {
   id: string;
@@ -33,15 +34,22 @@ const iconToPath: Record<string, string> = {
 // External links that open in new browser tab
 const externalLinks: Record<string, string> = {};
 
+function activateTopWindow(windows: WindowInfo[]) {
+  const top = windows.filter(w => !w.isMinimized).sort((a, b) => b.zIndex - a.zIndex)[0];
+  return windows.map(w => ({ ...w, isActive: w.id === top?.id }));
+}
+
 const Desktop = () => {
   const [openWindows, setOpenWindows] = useState<WindowInfo[]>([]);
   const [startMenuOpen, setStartMenuOpen] = useState(false);
-  const [nextZIndex, setNextZIndex] = useState(100);
-  const [hasShownWelcome, setHasShownWelcome] = useState(false);
 
   // ICQ chat state (persists across window open/close)
   const [icqMessages, setIcqMessages] = useState<ChatMessage[]>([]);
-  const [icqUnreadCount, setIcqUnreadCount] = useState(0);
+  const [readMessageCount, setReadMessageCount] = useState(0);
+  const assistantMessageCount = icqMessages.filter(m => m.role === 'assistant').length;
+  const icqActive = openWindows.some(w => w.id === 'icq' && w.isActive && !w.isMinimized);
+  if (icqActive && readMessageCount !== assistantMessageCount) setReadMessageCount(assistantMessageCount);
+  const icqUnreadCount = icqActive ? 0 : Math.max(0, assistantMessageCount - readMessageCount);
   const lastPlayedMessageCount = useRef(0);
 
   // Play sound only for new messages (once per message)
@@ -52,7 +60,7 @@ const Desktop = () => {
       const audio = new Audio('/sounds/icq-uh-oh.mp3');
       audio.volume = 0.25;
       audio.play().catch(() => {});
-    } catch {}
+    } catch { /* Sound is optional when audio or storage is unavailable. */ }
   }, []);
 
   // Track new messages and play sound once
@@ -62,116 +70,71 @@ const Desktop = () => {
       playUhOh();
       lastPlayedMessageCount.current = assistantMessages;
 
-      // Only increment unread if ICQ window is not open or not active
-      const icqWindow = openWindows.find(w => w.id === 'icq');
-      if (!icqWindow || icqWindow.isMinimized || !icqWindow.isActive) {
-        setIcqUnreadCount(prev => prev + 1);
-      }
     }
-  }, [icqMessages, openWindows, playUhOh]);
-
-  // Clear unread when ICQ becomes active
-  useEffect(() => {
-    const icqWindow = openWindows.find(w => w.id === 'icq');
-    if (icqWindow && icqWindow.isActive && !icqWindow.isMinimized) {
-      setIcqUnreadCount(0);
-    }
-  }, [openWindows]);
-
-  // Auto-open ICQ with welcome message after boot
-  useEffect(() => {
-    if (hasShownWelcome) return;
-
-    const timer = setTimeout(() => {
-      handleIconDoubleClick('icq', 'ICQ');
-      setHasShownWelcome(true);
-    }, 18000);
-
-    return () => clearTimeout(timer);
-  }, [hasShownWelcome]);
+  }, [icqMessages, playUhOh]);
 
   const handleIconDoubleClick = useCallback((id: string, title: string) => {
-    // Log the click event
     logClick('desktop-icon', id);
-
-    // Check if this is an external link
     if (externalLinks[id]) {
       window.open(externalLinks[id], '_blank', 'noopener,noreferrer');
       return;
     }
+    logWindowAction('open', id);
+    setOpenWindows(prev => {
+      const nextZIndex = Math.max(99, ...prev.map(w => w.zIndex)) + 1;
+      const existing = prev.some(w => w.id === id);
+      const windows = prev.map(w => ({
+        ...w,
+        isMinimized: w.id === id ? false : w.isMinimized,
+        isActive: w.id === id,
+        zIndex: w.id === id ? nextZIndex : w.zIndex,
+      }));
+      return existing ? windows : [...windows, { id, title, icon: iconToPath[id], isMinimized: false, isActive: true, zIndex: nextZIndex }];
+    });
+  }, []);
 
-    const existingWindow = openWindows.find(w => w.id === id);
-    if (existingWindow) {
-      logWindowAction('restore', id);
-      setOpenWindows(prev =>
-        prev.map(w => ({
-          ...w,
-          isMinimized: w.id === id ? false : w.isMinimized,
-          isActive: w.id === id,
-          zIndex: w.id === id ? nextZIndex : w.zIndex,
-        }))
-      );
-      setNextZIndex(prev => prev + 1);
-    } else {
-      logWindowAction('open', id);
-      setOpenWindows(prev => [
-        ...prev.map(w => ({ ...w, isActive: false })),
-        { id, title, icon: iconToPath[id], isMinimized: false, isActive: true, zIndex: nextZIndex }
-      ]);
-      setNextZIndex(prev => prev + 1);
-    }
-  }, [openWindows, nextZIndex]);
+  // Do not interrupt a visitor who has already opened ICQ themselves.
+  const hasOpenedICQ = useRef(false);
+  useEffect(() => {
+    if (openWindows.some(w => w.id === 'icq')) hasOpenedICQ.current = true;
+  }, [openWindows]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!hasOpenedICQ.current) handleIconDoubleClick('icq', 'ICQ');
+    }, 18000);
+    return () => clearTimeout(timer);
+  }, [handleIconDoubleClick]);
 
   const handleWindowClose = useCallback((id: string) => {
     logWindowAction('close', id);
-    setOpenWindows(prev => prev.filter(w => w.id !== id));
+    setOpenWindows(prev => activateTopWindow(prev.filter(w => w.id !== id)));
   }, []);
 
   const handleWindowMinimize = useCallback((id: string) => {
     logWindowAction('minimize', id);
-    setOpenWindows(prev =>
-      prev.map(w => ({
-        ...w,
-        isMinimized: w.id === id ? true : w.isMinimized,
-        isActive: w.id === id ? false : w.isActive,
-      }))
-    );
+    setOpenWindows(prev => activateTopWindow(prev.map(w => w.id === id ? { ...w, isMinimized: true, isActive: false } : w)));
   }, []);
 
   const handleWindowFocus = useCallback((id: string) => {
-    setOpenWindows(prev =>
-      prev.map(w => ({
-        ...w,
-        isActive: w.id === id,
-        zIndex: w.id === id ? nextZIndex : w.zIndex,
-      }))
-    );
-    setNextZIndex(prev => prev + 1);
-  }, [nextZIndex]);
+    setOpenWindows(prev => {
+      if (prev.some(w => w.id === id && w.isActive && !w.isMinimized)) return prev;
+      const nextZIndex = Math.max(99, ...prev.map(w => w.zIndex)) + 1;
+      return prev.map(w => ({ ...w, isActive: w.id === id, zIndex: w.id === id ? nextZIndex : w.zIndex }));
+    });
+  }, []);
 
   const handleTaskbarWindowClick = useCallback((id: string) => {
-    const window = openWindows.find(w => w.id === id);
-    if (window) {
-      if (window.isMinimized) {
-        // Restore minimized window
-        setOpenWindows(prev =>
-          prev.map(w => ({
-            ...w,
-            isMinimized: w.id === id ? false : w.isMinimized,
-            isActive: w.id === id,
-            zIndex: w.id === id ? nextZIndex : w.zIndex,
-          }))
-        );
-        setNextZIndex(prev => prev + 1);
-      } else if (window.isActive) {
-        // Minimize active window
-        handleWindowMinimize(id);
-      } else {
-        // Focus window
-        handleWindowFocus(id);
+    setOpenWindows(prev => {
+      const selected = prev.find(w => w.id === id);
+      if (!selected) return prev;
+      if (selected.isActive && !selected.isMinimized) {
+        return activateTopWindow(prev.map(w => w.id === id ? { ...w, isMinimized: true, isActive: false } : w));
       }
-    }
-  }, [openWindows, nextZIndex, handleWindowMinimize, handleWindowFocus]);
+      const nextZIndex = Math.max(99, ...prev.map(w => w.zIndex)) + 1;
+      return prev.map(w => ({ ...w, isActive: w.id === id, isMinimized: w.id === id ? false : w.isMinimized, zIndex: w.id === id ? nextZIndex : w.zIndex }));
+    });
+  }, []);
 
   const handleStartClick = () => {
     setStartMenuOpen(prev => !prev);
@@ -196,8 +159,8 @@ const Desktop = () => {
   }, [handleIconDoubleClick]);
 
   return (
-    <Container onClick={handleDesktopClick}>
-      <IconsArea>
+    <Container onClick={handleDesktopClick} aria-label="Windows 95 desktop">
+      <IconsArea role="group" aria-label="Desktop icons">
         <DesktopIcon
           id="my-computer"
           icon="/icons/my-computer.png"
@@ -278,7 +241,7 @@ const Desktop = () => {
           ) : windowInfo.id === 'minesweeper' ? (
             <Minesweeper />
           ) : windowInfo.id === 'cv-doc' ? (
-            <CVViewer />
+            <Suspense fallback={<p role="status">Loading CV viewer...</p>}><CVViewer /></Suspense>
           ) : windowInfo.id === 'icq' ? (
             <ICQ
               messages={icqMessages}
@@ -297,6 +260,7 @@ const Desktop = () => {
 
       {/* Start Menu */}
       <StartMenu
+        key={String(startMenuOpen)}
         isOpen={startMenuOpen}
         onClose={handleStartMenuClose}
         onOpenApp={handleOpenAppFromStartMenu}
@@ -315,8 +279,8 @@ const Desktop = () => {
 };
 
 const Container = styled.div`
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background-color: #008080;
   position: fixed;
   top: 0;
@@ -330,13 +294,15 @@ const IconsArea = styled.div`
   position: absolute;
   top: 10px;
   left: 10px;
+  right: 10px;
   bottom: 38px;
   display: flex;
   flex-direction: column;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 5px;
   padding: 5px;
-  overflow: hidden;
+  overflow: auto;
 `;
 
 const EmptyBinContent = styled.div`

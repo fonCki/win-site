@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import MusicPlayer from './MusicPlayer';
 import {
@@ -11,8 +11,11 @@ import {
 const HomePage = () => {
   // Guestbook state
   const [entries, setEntries] = useState<GuestbookEntry[]>([]);
-  const [visitorCount, setVisitorCount] = useState<number>(1337); // Default fallback
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (successTimer.current) clearTimeout(successTimer.current); }, []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -24,23 +27,16 @@ const HomePage = () => {
 
   // Fetch entries and record visit on mount
   useEffect(() => {
-    const init = async () => {
-      try {
-        // Record visit first (increments counter)
-        const visitResult = await recordVisit();
-        setVisitorCount(visitResult.visitorCount);
-
-        // Then fetch entries
-        const data = await getGuestbookEntries();
+    let cancelled = false;
+    void recordVisit().then(result => { if (!cancelled) setVisitorCount(result.visitorCount); }).catch(() => { /* Entries still load if visit tracking fails. */ });
+    void getGuestbookEntries().then(data => {
+      if (!cancelled) {
         setEntries(data.entries);
-      } catch (err) {
-        console.error('Failed to load guestbook:', err);
-        // Keep default visitor count on error
-      } finally {
-        setLoading(false);
+        setVisitorCount(count => count ?? data.visitorCount);
       }
-    };
-    init();
+    }).catch(() => { if (!cancelled) setLoadError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   // Handle form submission
@@ -49,20 +45,21 @@ const HomePage = () => {
     setError(null);
     setSuccessMessage(null);
 
-    if (!formName.trim() || !formMessage.trim()) {
-      setError('Please fill in both name and message!');
+    if (formName.trim().length < 2 || formMessage.trim().length < 3) {
+      setError('Use at least 2 characters for your name and 3 for your message.');
       return;
     }
 
     setSubmitting(true);
     try {
       const result = await submitGuestbookEntry(formName.trim(), formMessage.trim());
-      setEntries([result.entry, ...entries]);
+      setEntries(prev => [result.entry, ...prev]);
       setFormName('');
       setFormMessage('');
       setShowForm(false);
       setSuccessMessage('Thanks for signing my guestbook! You rock! 🎸');
-      setTimeout(() => setSuccessMessage(null), 5000);
+      if (successTimer.current) clearTimeout(successTimer.current);
+      successTimer.current = setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit. Try again!');
     } finally {
@@ -71,8 +68,8 @@ const HomePage = () => {
   };
 
   // Format visitor count with leading zeros (90s style!)
-  const formatVisitorCount = (count: number) => {
-    return String(count).padStart(6, '0');
+  const formatVisitorCount = (count: number | null) => {
+    return count === null ? '------' : String(count).padStart(6, '0');
   };
 
   return (
@@ -581,8 +578,9 @@ const HomePage = () => {
                 <FormTitle>✍️ SIGN MY GUESTBOOK! ✍️</FormTitle>
                 {error && <ErrorMessage>{error}</ErrorMessage>}
                 <FormGroup>
-                  <FormLabel>Your Name:</FormLabel>
+                  <FormLabel htmlFor="guest-name">Your Name:</FormLabel>
                   <FormInput
+                    id="guest-name"
                     type="text"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
@@ -592,8 +590,9 @@ const HomePage = () => {
                   />
                 </FormGroup>
                 <FormGroup>
-                  <FormLabel>Message:</FormLabel>
+                  <FormLabel htmlFor="guest-message">Message:</FormLabel>
                   <FormTextarea
+                    id="guest-message"
                     value={formMessage}
                     onChange={(e) => setFormMessage(e.target.value)}
                     maxLength={500}
@@ -621,6 +620,8 @@ const HomePage = () => {
             <GuestbookEntries>
               {loading ? (
                 <LoadingText>Loading guestbook entries...</LoadingText>
+              ) : loadError ? (
+                <ErrorMessage role="alert">Could not load guestbook. Use Refresh to try again.</ErrorMessage>
               ) : entries.length === 0 ? (
                 <EmptyMessage>Be the first to sign my guestbook!</EmptyMessage>
               ) : (
@@ -697,18 +698,6 @@ const flicker = keyframes`
   50% { opacity: 0.8; }
 `;
 
-const eqBounce = keyframes`
-  0%, 100% { height: 4px; }
-  50% { height: 24px; }
-`;
-
-const matrixFall = keyframes`
-  0% { transform: translateY(-100%); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(100%); opacity: 0; }
-`;
-
 const fireFlicker = keyframes`
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -724,130 +713,9 @@ const envelopeBounce = keyframes`
   50% { transform: translateY(-3px); }
 `;
 
-const twinkle = keyframes`
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-`;
-
-const floatStar = keyframes`
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
-  100% { transform: translateY(0); }
-`;
-
-// Floating side icon animations
-const bounce = keyframes`
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-`;
-
-const rotate3d = keyframes`
-  0% { transform: rotateY(0deg); }
-  100% { transform: rotateY(360deg); }
-`;
-
-// Side floating icons
-const SideIconBase = styled.a`
-  position: fixed;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-decoration: none;
-  padding: 10px;
-  background: rgba(0, 0, 50, 0.8);
-  border: 2px solid #00ffff;
-  border-radius: 8px;
-  transition: all 0.3s;
-
-  &:hover {
-    background: rgba(0, 0, 100, 0.9);
-    border-color: #ffff00;
-    box-shadow: 0 0 20px #ffff00;
-  }
-`;
-
-const SideIconLeft = styled(SideIconBase)`
-  left: 10px;
-`;
-
-const SideIconRight = styled(SideIconBase)`
-  right: 10px;
-`;
-
-const SideIconImage = styled.img`
-  width: 50px;
-  height: 50px;
-  animation: ${rotate3d} 4s linear infinite;
-
-  &:hover {
-    animation-play-state: paused;
-  }
-`;
-
-const SideIconLabel = styled.span`
-  color: #00ffff;
-  font-size: 10px;
-  margin-top: 5px;
-  font-weight: bold;
-  text-shadow: 0 0 5px #00ffff;
-`;
-
-const LinkedInBox = styled.div`
-  width: 50px;
-  height: 50px;
-  background: #0077b5;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: ${rotate3d} 4s linear infinite;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px #0077b5;
-`;
-
-const LinkedInLogo = styled.span`
-  font-size: 32px;
-  font-weight: bold;
-  color: #fff;
-  font-family: Georgia, serif;
-`;
-
-const InstagramBox = styled.div`
-  width: 50px;
-  height: 50px;
-  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  animation: ${rotate3d} 4s linear infinite;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px #dc2743;
-`;
-
-const InstagramLens = styled.div`
-  width: 22px;
-  height: 22px;
-  border: 3px solid #fff;
-  border-radius: 50%;
-`;
-
-const InstagramDot = styled.div`
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  background: #fff;
-  border-radius: 50%;
-`;
-
 // Styled Components
 const PageContainer = styled.div`
+  overflow-wrap: anywhere;
   min-height: 100%;
   background-color: #000011;
   background-image:
@@ -921,8 +789,8 @@ const RainbowText = styled.span`
 const GlowText = styled.span`
   color: #00ffff;
   animation: ${glow} 2s ease-in-out infinite;
-  font-size: 48px;
-  letter-spacing: 8px;
+  font-size: clamp(22px, 7cqi, 48px);
+  letter-spacing: clamp(2px, 1cqi, 8px);
 `;
 
 const Subtitle = styled.div`
@@ -932,6 +800,7 @@ const Subtitle = styled.div`
 `;
 
 const HitCounter = styled.div`
+  flex-wrap: wrap;
   margin: 20px 0;
   display: flex;
   justify-content: center;
@@ -1091,17 +960,6 @@ const StarDivider = styled.span`
   text-shadow: 0 0 10px #ffff00;
 `;
 
-const GifDivider = styled.div`
-  text-align: center;
-  margin: 10px 0;
-`;
-
-const AnimatedGif = styled.img`
-  max-width: 100%;
-  height: auto;
-  image-rendering: pixelated;
-`;
-
 const NavTable = styled.nav`
   background: linear-gradient(180deg, #000066 0%, #000033 100%);
   border: 3px double #00ffff;
@@ -1136,12 +994,14 @@ const NavLink = styled.a`
 `;
 
 const ContentArea = styled.main`
+  @container (max-width: 480px) { padding: 8px; }
   max-width: 750px;
   margin: 0 auto;
   padding: 20px;
 `;
 
 const Section = styled.section`
+  @container (max-width: 480px) { padding: 8px; }
   margin: 30px 0;
   padding: 15px;
   background: rgba(0, 0, 50, 0.5);
@@ -1149,6 +1009,7 @@ const Section = styled.section`
 `;
 
 const SectionHeader = styled.div`
+  flex-wrap: wrap;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1179,6 +1040,7 @@ const BlinkingNew = styled.span`
 
 // About Section
 const AboutContent = styled.div`
+  @container (max-width: 480px) { flex-direction: column; align-items: center; }
   display: flex;
   gap: 20px;
   align-items: flex-start;
@@ -1280,7 +1142,8 @@ const NostalgiaIntro = styled.div`
 
 const NostalgiaGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  @container (max-width: 480px) { grid-template-columns: 1fr; }
   gap: 15px;
   margin-bottom: 20px;
 `;
@@ -1379,14 +1242,6 @@ const BTTFContent = styled.div`
   text-align: center;
 `;
 
-const DeloreanArt = styled.pre`
-  color: #c0c0c0;
-  font-family: monospace;
-  font-size: 12px;
-  line-height: 1;
-  margin: 15px 0;
-`;
-
 const BTTFQuote = styled.div`
   color: #ffff00;
   font-size: 16px;
@@ -1417,6 +1272,7 @@ const TimeCircuit = styled.div`
 `;
 
 const CircuitRow = styled.div`
+  flex-wrap: wrap;
   display: flex;
   justify-content: space-between;
   margin: 5px 0;
@@ -1498,7 +1354,7 @@ const BTTFImageRow = styled.div`
 `;
 
 const BTTFGif = styled.img`
-  max-width: 200px;
+  max-width: min(200px, 100%);
   height: auto;
   border: 3px solid #00ffff;
   box-shadow: 0 0 10px #00ffff;
@@ -1566,6 +1422,7 @@ const CodingIntro = styled.div`
 `;
 
 const LanguageButtons = styled.div`
+  flex-wrap: wrap;
   display: flex;
   justify-content: center;
   gap: 15px;
@@ -1581,32 +1438,6 @@ const LangButton = styled.div<{ $bg: string; $border: string; $dark?: boolean }>
   font-size: 14px;
 `;
 
-const CodeExamples = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-`;
-
-const CodeBox = styled.div`
-  background: #1a1a1a;
-  border: 2px inset #333;
-`;
-
-const CodeHeader = styled.div`
-  background: #000080;
-  color: #fff;
-  padding: 4px 8px;
-  font-size: 11px;
-`;
-
-const CodeContent = styled.pre`
-  color: #00ff00;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  padding: 10px;
-  margin: 0;
-`;
-
 const CodeSymbol = styled.span`
   color: #00ff00;
   font-size: 16px;
@@ -1614,7 +1445,8 @@ const CodeSymbol = styled.span`
 
 const ProjectsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  @container (max-width: 480px) { grid-template-columns: 1fr; }
   gap: 15px;
   margin-bottom: 20px;
 `;
@@ -1657,58 +1489,6 @@ const ProjectLink = styled.div`
   font-size: 10px;
 `;
 
-const SocialLinksRow = styled.div`
-  display: flex;
-  justify-content: center;
-  gap: 15px;
-  margin-top: 20px;
-  flex-wrap: wrap;
-`;
-
-const SocialButton = styled.a<{ $color?: string }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: ${props => props.$color || '#333'};
-  color: #fff;
-  padding: 10px 20px;
-  border: 3px outset ${props => props.$color || '#666'};
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: bold;
-  cursor: pointer;
-  font-family: 'MS Sans Serif', Tahoma, sans-serif;
-
-  &:hover {
-    filter: brightness(1.2);
-    border-style: inset;
-  }
-
-  &:active {
-    border-style: inset;
-  }
-`;
-
-const GithubIcon = styled.span`
-  font-size: 18px;
-  color: #fff;
-`;
-
-const LinkedInIcon = styled.span`
-  font-size: 16px;
-  font-weight: bold;
-  color: #fff;
-  background: #fff;
-  color: #0077b5;
-  padding: 2px 5px;
-  border-radius: 3px;
-`;
-
-const InstagramIcon = styled.span`
-  font-size: 18px;
-  color: #fff;
-`;
-
 const GitHubButton = styled.button`
   background: linear-gradient(180deg, #333 0%, #111 100%);
   color: #ffffff;
@@ -1741,18 +1521,11 @@ const GitHubLogo = styled.span`
 const GamingContent = styled.div``;
 
 const GameCards = styled.div`
+  flex-wrap: wrap;
   display: flex;
   justify-content: center;
   gap: 30px;
   margin-bottom: 20px;
-`;
-
-const GameCard = styled.div`
-  background: #000;
-  border: 2px solid #ffff00;
-  padding: 15px;
-  text-align: center;
-  min-width: 150px;
 `;
 
 const GameCardLink = styled.a`
@@ -1841,17 +1614,6 @@ const DownloadTitle = styled.div`
 
 const DownloadList = styled.div``;
 
-const DownloadItem = styled.div`
-  color: #00ffff;
-  font-size: 12px;
-  margin: 5px 0;
-  cursor: pointer;
-
-  &:hover {
-    color: #ffff00;
-  }
-`;
-
 const DownloadLink = styled.a`
   display: block;
   color: #00ffff;
@@ -1896,64 +1658,6 @@ const BandName = styled.div`
   letter-spacing: 3px;
 `;
 
-const NowPlayingBox = styled.div`
-  background: #000;
-  border: 2px inset #333;
-  padding: 15px;
-  margin: 20px 0;
-`;
-
-const NowPlayingLabel = styled.div`
-  color: #808080;
-  font-size: 10px;
-  margin-bottom: 5px;
-`;
-
-const NowPlayingTrack = styled.div`
-  color: #00ff00;
-  font-size: 16px;
-  margin-bottom: 3px;
-`;
-
-const NowPlayingArtist = styled.div`
-  color: #00ffff;
-  font-size: 12px;
-  margin-bottom: 10px;
-`;
-
-const Equalizer = styled.div`
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 3px;
-  height: 30px;
-`;
-
-const EQBar = styled.div`
-  width: 6px;
-  background: linear-gradient(180deg, #00ff00, #ffff00, #ff0000);
-  animation: ${eqBounce} 0.4s ease-in-out infinite;
-`;
-
-const TrackList = styled.div`
-  text-align: left;
-  max-width: 250px;
-  margin: 0 auto;
-`;
-
-const TrackListTitle = styled.div`
-  color: #ffff00;
-  font-size: 12px;
-  margin-bottom: 10px;
-  text-align: center;
-`;
-
-const Track = styled.div`
-  color: #ffffff;
-  font-size: 12px;
-  margin: 5px 0;
-`;
-
 const MusicNote = styled.span`
   color: #ff00ff;
   font-size: 16px;
@@ -1961,6 +1665,7 @@ const MusicNote = styled.span`
 
 // Construction Section
 const ConstructionContent = styled.div`
+  flex-wrap: wrap;
   display: flex;
   gap: 20px;
   align-items: center;
@@ -2028,6 +1733,7 @@ const GuestEntry = styled.div`
 `;
 
 const GuestHeader = styled.div`
+  flex-wrap: wrap;
   display: flex;
   justify-content: space-between;
   margin-bottom: 5px;
@@ -2147,6 +1853,7 @@ const FormTextarea = styled.textarea`
 `;
 
 const FormButtons = styled.div`
+  flex-wrap: wrap;
   display: flex;
   gap: 10px;
   justify-content: center;
@@ -2292,6 +1999,7 @@ const WebRingTitle = styled.div`
 `;
 
 const WebRingNav = styled.div`
+  flex-wrap: wrap;
   display: flex;
   justify-content: center;
   gap: 10px;

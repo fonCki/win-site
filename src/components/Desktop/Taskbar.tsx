@@ -55,8 +55,11 @@ const Taskbar = ({ openWindows, startMenuOpen, onStartClick, onWindowClick, onIC
   };
 
   return (
-    <Container>
+    <Container aria-label="Taskbar">
       <StartButton
+        aria-label="Start"
+        aria-haspopup="menu"
+        aria-expanded={startMenuOpen}
         onClick={(e: React.MouseEvent) => {
           e.stopPropagation();
           logClick('taskbar', 'start-button');
@@ -75,6 +78,8 @@ const Taskbar = ({ openWindows, startMenuOpen, onStartClick, onWindowClick, onIC
           <WindowButton
             key={win.id}
             $active={win.isActive}
+            title={win.title}
+            aria-label={win.title}
             onClick={() => onWindowClick?.(win.id)}
           >
             {win.icon && <TaskbarWindowIcon src={win.icon} alt="" />}
@@ -110,6 +115,7 @@ const Container = styled.div`
   left: 0;
   right: 0;
   height: 30px;
+  z-index: 10000;
   background-color: #c0c0c0;
   border-top: 2px solid #dfdfdf;
   display: flex;
@@ -125,6 +131,7 @@ const StartButton = styled(Button)<{ active?: boolean }>`
   padding: 2px 8px;
   font-weight: bold;
   min-width: 60px;
+  flex-shrink: 0;
   height: 26px;
 `;
 
@@ -148,21 +155,25 @@ const Divider = styled.div`
 
 const WindowButtons = styled.div`
   flex: 1;
+  min-width: 0;
   display: flex;
   gap: 2px;
-  overflow: hidden;
+  overflow-x: auto;
+  scrollbar-width: none;
 `;
 
 const TaskbarWindowIcon = styled.img`
   width: 16px;
   height: 16px;
   margin-right: 4px;
+  flex-shrink: 0;
   image-rendering: pixelated;
 `;
 
 const WindowButton = styled.button<{ $active: boolean }>`
   height: 26px;
-  min-width: 130px;
+  flex: 1 0 32px;
+  min-width: 32px;
   max-width: 170px;
   padding: 2px 8px;
   font-size: 12px;
@@ -191,6 +202,7 @@ const WindowButton = styled.button<{ $active: boolean }>`
 
 const SystemTray = styled.div`
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   padding: 2px 8px;
@@ -207,8 +219,11 @@ const blink = keyframes`
   51%, 100% { opacity: 0.3; }
 `;
 
-const ICQIcon = styled.div<{ $status: ICQStatus }>`
+const ICQIcon = styled.button<{ $status: ICQStatus }>`
   position: relative;
+  background: transparent;
+  border: 0;
+  padding: 0;
   width: 18px;
   height: 18px;
   display: flex;
@@ -247,7 +262,10 @@ const ICQBadge = styled.span`
   animation: ${pulse} 1s infinite;
 `;
 
-const SpeakerIcon = styled.span`
+const SpeakerIcon = styled.button`
+  background: transparent;
+  border: 0;
+  padding: 0;
   font-size: 14px;
   cursor: pointer;
   user-select: none;

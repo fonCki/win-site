@@ -3,12 +3,11 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import styled from 'styled-components';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import { apiFetch } from '../../../services/api';
 import { logCVAction } from '../../../services/analyticsService';
 
 // Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-
-const CV_API_URL = `${import.meta.env.VITE_API_BASE_URL}/api/cv`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 const CVViewer = () => {
   const [numPages, setNumPages] = useState<number>(0);
@@ -16,14 +15,27 @@ const CVViewer = () => {
   const [scale, setScale] = useState(1.0);
   const [cvUrl, setCvUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  const [pageWidth, setPageWidth] = useState(0);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = pdfContainerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(entries => setPageWidth(Math.max(1, entries[0].contentRect.width)));
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
   const hasLoggedOpen = useRef(false);
 
   // Fetch presigned URL for CV from API
   useEffect(() => {
+    const controller = new AbortController();
     const fetchCvUrl = async () => {
       try {
-        const response = await fetch(CV_API_URL);
+        const response = await apiFetch('/api/cv', { signal: controller.signal });
         const data = await response.json();
+        if (typeof data.url !== 'string' || !/^https?:\/\//.test(data.url)) throw new Error('Invalid CV URL');
+        if (controller.signal.aborted) return;
         setCvUrl(data.url);
         // Log CV opened
         if (!hasLoggedOpen.current) {
@@ -31,13 +43,16 @@ const CVViewer = () => {
           logCVAction('opened');
         }
       } catch (error) {
-        console.error('Failed to fetch CV URL:', error);
+        if (!controller.signal.aborted) console.error('Failed to fetch CV URL:', error);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
     fetchCvUrl();
-  }, []);
+    return () => controller.abort();
+  }, [attempt]);
+
+  const retry = () => { setLoading(true); setCvUrl(null); setNumPages(0); setCurrentPage(1); setAttempt(a => a + 1); };
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -66,7 +81,7 @@ const CVViewer = () => {
             ◀
           </ToolButton>
           <PageIndicator>
-            <PageInput type="text" value={currentPage} readOnly />
+            <PageInput aria-label="Current page" type="text" value={currentPage} readOnly />
             <PageText>of {numPages}</PageText>
           </PageIndicator>
           <ToolButton onClick={handleNextPage} disabled={currentPage >= numPages} title="Next Page">
@@ -85,17 +100,17 @@ const CVViewer = () => {
         <ToolbarDivider />
 
         <ToolbarSection>
-          <ToolButton as="a" href={cvUrl || '#'} download="Alfonso_Pedro_Ridao_CV.pdf" title="Save">
+          <ToolButton as="a" href={cvUrl || undefined} aria-disabled={!cvUrl} download="Alfonso_Pedro_Ridao_CV.pdf" title="Save">
             💾
           </ToolButton>
-          <ToolButton as="a" href={cvUrl || '#'} target="_blank" title="Open">
+          <ToolButton as="a" href={cvUrl || undefined} aria-disabled={!cvUrl} target="_blank" rel="noopener noreferrer" title="Open">
             🔗
           </ToolButton>
         </ToolbarSection>
       </Toolbar>
 
       {/* PDF Display Area */}
-      <PDFContainer>
+      <PDFContainer ref={pdfContainerRef}>
         {loading ? (
           <LoadingMessage>Loading CV...</LoadingMessage>
         ) : cvUrl ? (
@@ -103,17 +118,18 @@ const CVViewer = () => {
             file={cvUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             loading={<LoadingMessage>Loading PDF...</LoadingMessage>}
-            error={<ErrorMessage>Failed to load PDF</ErrorMessage>}
+            error={<ErrorMessage role="alert">Failed to load PDF. <ToolButton onClick={retry}>Retry</ToolButton></ErrorMessage>}
           >
             <Page
               pageNumber={currentPage}
+              width={pageWidth || undefined}
               scale={scale}
               renderTextLayer={false}
               renderAnnotationLayer={false}
             />
           </Document>
         ) : (
-          <ErrorMessage>Failed to load CV</ErrorMessage>
+          <ErrorMessage role="alert">Failed to load CV. <ToolButton onClick={retry}>Retry</ToolButton></ErrorMessage>
         )}
       </PDFContainer>
 
@@ -141,6 +157,7 @@ const ViewerContainer = styled.div`
 
 const Toolbar = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   padding: 4px 6px;
@@ -226,11 +243,11 @@ const ZoomIndicator = styled.span`
 
 const PDFContainer = styled.div`
   flex: 1;
+  min-height: 0;
   background: #666;
   overflow: auto;
-  display: flex;
-  justify-content: center;
   padding: 10px;
+  .react-pdf__Document { width: max-content; margin: 0 auto; }
 `;
 
 const LoadingMessage = styled.div`
@@ -247,6 +264,7 @@ const ErrorMessage = styled.div`
 
 const StatusBar = styled.div`
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   padding: 2px 6px;

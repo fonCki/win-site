@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "playwright test",
+    "test:browser": "playwright test",
+    "test:unit": "playwright test --project=unit",
+    "test:live": "node scripts/verify-live.mjs",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "check:privacy": "node scripts/check-repository.mjs"
   },
   "dependencies": {
     "98.css": "^0.1.21",
@@ -19,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
@@ -32,5 +39,8 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

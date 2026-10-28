@@ -20,75 +20,72 @@ const MusicPlayer = () => {
   const playerRef = useRef<YT.Player | null>(null);
   const intervalRef = useRef<number | null>(null);
 
-  // Load YouTube IFrame API
+  const playerHostRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef(0);
+
+  // Each mount owns its player and callback, including StrictMode remounts.
   useEffect(() => {
-    if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-    }
-
-    (window as any).onYouTubeIframeAPIReady = () => {
-      initPlayer();
+    let disposed = false;
+    const stopTimer = () => {
+      if (intervalRef.current) window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
     };
-
-    if (window.YT && window.YT.Player) {
-      initPlayer();
+    const syncMute = () => {
+      if (localStorage.getItem('win95-muted') === 'true') playerRef.current?.mute();
+      else playerRef.current?.unMute();
+    };
+    const initPlayer = () => {
+      if (disposed || playerRef.current || !playerHostRef.current) return;
+      const target = document.createElement('div');
+      playerHostRef.current.replaceChildren(target);
+      playerRef.current = new window.YT.Player(target, {
+        height: '0', width: '0', videoId: TRACKS[0].youtubeId,
+        playerVars: { autoplay: 0, controls: 0 },
+        events: {
+          onReady: event => { event.target.setVolume(70); syncMute(); },
+          onStateChange: event => {
+            if (disposed) return;
+            stopTimer();
+            if (event.data === window.YT.PlayerState.ENDED) {
+              const next = (trackRef.current + 1) % TRACKS.length;
+              trackRef.current = next;
+              setCurrentTrack(next);
+              setElapsed(5);
+              event.target.loadVideoById({ videoId: TRACKS[next].youtubeId, startSeconds: 5 });
+            } else if (event.data === window.YT.PlayerState.PLAYING) {
+              setIsPlaying(true);
+              setDuration(event.target.getDuration() || 0);
+              intervalRef.current = window.setInterval(() => setElapsed(event.target.getCurrentTime() || 0), 1000);
+            } else {
+              setIsPlaying(false);
+            }
+          },
+        },
+      });
+    };
+    const previousReady = window.onYouTubeIframeAPIReady;
+    const onReady = () => { previousReady?.(); initPlayer(); };
+    window.onYouTubeIframeAPIReady = onReady;
+    if (window.YT?.Player) initPlayer();
+    else if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(script);
     }
-
+    window.addEventListener('win95-mute-change', syncMute);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      disposed = true;
+      stopTimer();
+      playerRef.current?.destroy();
+      playerRef.current = null;
+      window.removeEventListener('win95-mute-change', syncMute);
+      if (window.onYouTubeIframeAPIReady === onReady) window.onYouTubeIframeAPIReady = previousReady;
     };
   }, []);
 
-  const initPlayer = () => {
-    playerRef.current = new window.YT.Player('youtube-player', {
-      height: '0',
-      width: '0',
-      videoId: TRACKS[0].youtubeId,
-      playerVars: {
-        autoplay: 0,
-        controls: 0,
-      },
-      events: {
-        onReady: onPlayerReady,
-        onStateChange: onPlayerStateChange,
-      },
-    });
-  };
-
-  const onPlayerReady = (event: YT.PlayerEvent) => {
-    event.target.setVolume(volume);
-  };
-
-  const onPlayerStateChange = (event: YT.OnStateChangeEvent) => {
-    if (event.data === window.YT.PlayerState.ENDED) {
-      handleNext();
-    } else if (event.data === window.YT.PlayerState.PLAYING) {
-      setIsPlaying(true);
-      setDuration(playerRef.current?.getDuration() || 0);
-      startTimer();
-    } else if (event.data === window.YT.PlayerState.PAUSED) {
-      setIsPlaying(false);
-      stopTimer();
-    }
-  };
-
-  const startTimer = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = window.setInterval(() => {
-      if (playerRef.current) {
-        setElapsed(playerRef.current.getCurrentTime() || 0);
-      }
-    }, 1000);
-  };
-
   const stopTimer = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    intervalRef.current = null;
   };
 
   const handlePlayPause = () => {
@@ -107,6 +104,7 @@ const MusicPlayer = () => {
 
   const handlePrev = () => {
     const newIndex = currentTrack === 0 ? TRACKS.length - 1 : currentTrack - 1;
+    trackRef.current = newIndex;
     setCurrentTrack(newIndex);
     setElapsed(5);
     if (playerRef.current) {
@@ -119,6 +117,7 @@ const MusicPlayer = () => {
 
   const handleNext = () => {
     const newIndex = (currentTrack + 1) % TRACKS.length;
+    trackRef.current = newIndex;
     setCurrentTrack(newIndex);
     setElapsed(5);
     if (playerRef.current) {
@@ -147,6 +146,7 @@ const MusicPlayer = () => {
   };
 
   const handleTrackClick = (index: number) => {
+    trackRef.current = index;
     setCurrentTrack(index);
     setElapsed(5);
     if (playerRef.current) {
@@ -166,7 +166,7 @@ const MusicPlayer = () => {
   return (
     <PlayerContainer>
       {/* Hidden YouTube player */}
-      <div id="youtube-player" style={{ display: 'none' }} />
+      <div ref={playerHostRef} style={{ display: 'none' }} />
 
       {/* WinAmp Style Header */}
       <PlayerHeader>
@@ -219,6 +219,7 @@ const MusicPlayer = () => {
         <VolumeContainer>
           <VolumeLabel>VOL</VolumeLabel>
           <VolumeSlider
+            aria-label="Music volume"
             type="range"
             min="0"
             max="100"
@@ -417,6 +418,7 @@ const Controls = styled.div`
   align-items: center;
   justify-content: center;
   gap: 5px;
+  flex-wrap: wrap;
   padding: 5px;
 `;
 

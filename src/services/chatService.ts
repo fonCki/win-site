@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+import { apiFetch } from './api';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -13,7 +13,7 @@ export async function sendChatMessage(
   message: string,
   history: ChatMessage[] = []
 ): Promise<string> {
-  const response = await fetch(`${API_BASE}/api/chat`, {
+  const response = await apiFetch('/api/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -29,5 +29,6 @@ export async function sendChatMessage(
   }
 
   const data: ChatResponse = await response.json();
+  if (typeof data.response !== 'string' || !data.response.trim()) throw new Error('Empty chat response');
   return data.response;
 }

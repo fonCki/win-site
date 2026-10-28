@@ -1,6 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import styled from 'styled-components';
-import useSound from '../../hooks/useSound';
 
 interface BootScreenProps {
   onBootComplete: () => void;
@@ -8,29 +7,21 @@ interface BootScreenProps {
 }
 
 const BootScreen = ({ onBootComplete, duration = 6000 }: BootScreenProps) => {
-  const hasPlayedSound = useRef(false);
-  const { play: playStartupSound } = useSound('/sounds/startup.mp3');
-
   useEffect(() => {
-    if (!hasPlayedSound.current) {
-      hasPlayedSound.current = true;
-      playStartupSound();
-    }
-
     const timer = setTimeout(onBootComplete, duration);
     return () => clearTimeout(timer);
-  }, [duration, onBootComplete, playStartupSound]);
+  }, [duration, onBootComplete]);
 
   return (
-    <Container>
+    <Container aria-label="Starting Windows 95">
       <BootImage src="/images/win95-boot.png" alt="Windows 95" />
     </Container>
   );
 };
 
 const Container = styled.div`
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   /* Sky gradient that matches the Windows 95 boot screen clouds */
   background: linear-gradient(
     180deg,
@@ -54,11 +45,11 @@ const Container = styled.div`
 `;
 
 const BootImage = styled.img`
-  /* Fill the viewport height, width auto-scales proportionally */
-  height: 100vh;
-  width: auto;
-  min-width: 100vw;
-  object-fit: cover;
+  /* Keep the complete original artwork visible at every aspect ratio. */
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   object-position: center;
 `;
 

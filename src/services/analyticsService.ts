@@ -1,7 +1,8 @@
 // Analytics service for win.ridao.ar
 // Fire-and-forget logging to DynamoDB via Lambda
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+import { API_BASE } from './api';
+const enabled = Boolean(API_BASE) && (import.meta.env.VITE_ANALYTICS_ENABLED === 'true' || (import.meta.env.PROD && import.meta.env.VITE_ANALYTICS_ENABLED !== 'false'));
 const LOG_API_URL = `${API_BASE}/api/log`;
 const IP_API_URL = import.meta.env.VITE_IP_API_URL || 'https://api.ipify.org?format=json';
 
@@ -17,10 +18,10 @@ const generateSessionId = (): string => {
 // Get or create session ID
 export const getSessionId = (): string => {
   if (!sessionId) {
-    sessionId = sessionStorage.getItem('win95-session-id');
+    try { sessionId = sessionStorage.getItem('win95-session-id'); } catch { /* Storage may be blocked. */ }
     if (!sessionId) {
       sessionId = generateSessionId();
-      sessionStorage.setItem('win95-session-id', sessionId);
+      try { sessionStorage.setItem('win95-session-id', sessionId); } catch { /* Keep the in-memory ID. */ }
     }
   }
   return sessionId;
@@ -28,17 +29,20 @@ export const getSessionId = (): string => {
 
 // Get user's IP address (cached)
 export const getIP = async (): Promise<string> => {
+  if (!enabled) return 'unknown';
   if (cachedIP) return cachedIP;
 
-  const stored = sessionStorage.getItem('win95-user-ip');
-  if (stored) {
-    cachedIP = stored;
-    return stored;
-  }
-
   try {
-    const response = await fetch(IP_API_URL);
+    const stored = sessionStorage.getItem('win95-user-ip');
+    if (stored) {
+      cachedIP = stored;
+      return stored;
+    }
+
+    const response = await fetch(IP_API_URL, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return 'unknown';
     const data = await response.json();
+    if (typeof data.ip !== 'string') return 'unknown';
     cachedIP = data.ip;
     sessionStorage.setItem('win95-user-ip', data.ip);
     return data.ip;
@@ -49,6 +53,7 @@ export const getIP = async (): Promise<string> => {
 
 // Fire-and-forget log function (non-blocking)
 const logEvent = async (event: Record<string, unknown>): Promise<void> => {
+  if (!enabled) return;
   try {
     const ip = await getIP();
     fetch(LOG_API_URL, {
@@ -63,7 +68,6 @@ const logEvent = async (event: Record<string, unknown>): Promise<void> => {
 
 // Log visit event (on page load)
 export const logVisit = async (): Promise<void> => {
-  const ip = await getIP();
   logEvent({
     type: 'win-visit',
     userAgent: navigator.userAgent,
@@ -111,6 +115,7 @@ export const logCVAction = (action: string, pageNumber?: number): void => {
 
 // Log session end (call on beforeunload)
 export const logSessionEnd = (durationMs: number): void => {
+  if (!enabled) return;
   const ip = cachedIP || 'unknown';
   // Use sendBeacon for reliable delivery on page unload
   const data = JSON.stringify({

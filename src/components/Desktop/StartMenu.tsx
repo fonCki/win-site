@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { logClick } from '../../services/analyticsService';
 
@@ -19,6 +19,11 @@ interface MenuItem {
 
 const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -33,7 +38,7 @@ const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
   const handleItemClick = (item: MenuItem) => {
     logClick('start-menu', item.id);
     if (item.id === 'shutdown') {
-      window.location.href = 'https://alfonso.ridao.ar';
+      window.location.assign('https://alfonso.ridao.ar');
       return;
     }
     onOpenApp(item.id, item.title);
@@ -42,11 +47,17 @@ const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
 
   const handleShutdown = () => {
     logClick('start-menu', 'shutdown');
-    window.location.href = 'https://alfonso.ridao.ar';
+    window.location.assign('https://alfonso.ridao.ar');
   };
 
   return (
-    <MenuContainer onClick={(e) => e.stopPropagation()}>
+    <MenuContainer ref={menuRef} role="menu" aria-label="Start menu" onClick={(e) => e.stopPropagation()}
+      onKeyDown={e => {
+        if (e.key === 'Escape') { onClose(); document.querySelector<HTMLButtonElement>('[aria-label="Start"]')?.focus(); }
+        if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof HTMLElement && e.target.getAttribute('role') === 'menuitem') {
+          e.preventDefault(); e.stopPropagation(); e.target.click();
+        }
+      }}>
       {/* Windows 95 Banner */}
       <Banner>
         <BannerText>
@@ -59,6 +70,12 @@ const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
       <MenuItems>
         {/* Programs */}
         <MenuItemRow
+          role="menuitem"
+          tabIndex={0}
+          aria-label="Programs"
+          aria-haspopup="menu"
+          aria-expanded={activeSubmenu === 'programs'}
+          onClick={() => setActiveSubmenu('programs')}
           onMouseEnter={() => setActiveSubmenu('programs')}
           onMouseLeave={() => setActiveSubmenu(null)}
         >
@@ -67,9 +84,9 @@ const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
           <MenuArrow>▶</MenuArrow>
 
           {activeSubmenu === 'programs' && (
-            <Submenu>
+            <Submenu role="menu" aria-label="Programs">
               {programsItems.map((item) => (
-                <SubmenuItem key={item.id} onClick={() => handleItemClick(item)}>
+                <SubmenuItem aria-label={item.title} role="menuitem" tabIndex={0} key={item.id} onClick={e => { e.stopPropagation(); handleItemClick(item); }}>
                   <MenuIcon>{item.icon}</MenuIcon>
                   <MenuLabel>{item.title}</MenuLabel>
                 </SubmenuItem>
@@ -79,7 +96,7 @@ const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
         </MenuItemRow>
 
         {/* Documents */}
-        <MenuItemRow onClick={() => handleItemClick({ id: 'cv-doc', title: 'CV.doc', icon: '📄' })}>
+        <MenuItemRow role="menuitem" tabIndex={0} onClick={() => handleItemClick({ id: 'cv-doc', title: 'CV.doc', icon: '📄' })}>
           <MenuIcon>📂</MenuIcon>
           <MenuLabel>Documents</MenuLabel>
         </MenuItemRow>
@@ -113,7 +130,7 @@ const StartMenu = ({ isOpen, onClose, onOpenApp }: StartMenuProps) => {
         <Divider />
 
         {/* Shut Down */}
-        <MenuItemRow onClick={handleShutdown}>
+        <MenuItemRow role="menuitem" tabIndex={0} onClick={handleShutdown}>
           <MenuIcon>🔌</MenuIcon>
           <MenuLabel>Shut Down...</MenuLabel>
         </MenuItemRow>
@@ -136,7 +153,12 @@ const MenuContainer = styled.div`
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
   display: flex;
   font-family: 'MS Sans Serif', Tahoma, sans-serif;
-  z-index: 10000;
+  z-index: 10001;
+  max-height: calc(100% - 30px);
+  @media (max-width: 420px) {
+    max-width: calc(100% - 4px);
+    overflow-y: auto;
+  }
 `;
 
 const Banner = styled.div`
@@ -169,9 +191,10 @@ const MenuItemRow = styled.div<{ $disabled?: boolean }>`
   gap: 8px;
   cursor: ${props => props.$disabled ? 'default' : 'pointer'};
   position: relative;
+  flex-wrap: wrap;
   color: ${props => props.$disabled ? '#808080' : '#000'};
 
-  &:hover {
+  &:hover, &:focus-visible {
     background: ${props => props.$disabled ? 'transparent' : '#000080'};
     color: ${props => props.$disabled ? '#808080' : '#fff'};
   }
@@ -205,6 +228,12 @@ const Submenu = styled.div`
   border-bottom-color: #404040;
   padding: 2px 0;
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+  color: #000;
+  @media (max-width: 420px) {
+    position: static;
+    width: 100%;
+    margin-top: 4px;
+  }
 `;
 
 const SubmenuItem = styled.div`
@@ -214,7 +243,7 @@ const SubmenuItem = styled.div`
   gap: 8px;
   cursor: pointer;
 
-  &:hover {
+  &:hover, &:focus-visible {
     background: #000080;
     color: #fff;
   }

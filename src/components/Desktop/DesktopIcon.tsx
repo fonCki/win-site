@@ -31,6 +31,14 @@ const DesktopIcon = ({ id, icon, label, onDoubleClick }: DesktopIconProps) => {
       onDoubleClick={handleDoubleClick}
       onBlur={handleBlur}
       tabIndex={0}
+      role="button"
+      aria-label={label}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onDoubleClick(id, label); }
+      }}
+      onPointerUp={e => {
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') onDoubleClick(id, label);
+      }}
       $selected={isSelected}
     >
       <IconWrapper $selected={isSelected}>
@@ -46,12 +54,13 @@ const Container = styled.div<{ $selected: boolean }>`
   flex-direction: column;
   align-items: center;
   width: 75px;
+  flex: 0 0 auto;
   padding: 4px;
   cursor: default;
   outline: none;
 
-  &:focus {
-    outline: none;
+  &:focus-visible {
+    outline: 1px dotted #fff;
   }
 `;
 
